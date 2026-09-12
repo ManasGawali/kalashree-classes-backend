@@ -287,4 +287,36 @@ router.put("/payments/:id/reject", async (req, res) => {
   }
 });
 
+const {
+  runStudentReminders,
+  runAdminUnpaidReport,
+  runAdminCumulativeReport,
+} = require("../utils/scheduler");
+
+/* ---------------------- TEST SCHEDULED EMAILS (admin only) ---------------------- */
+// POST /api/admin/test-scheduled-emails?job=reminders|unpaid|cumulative|all
+router.post("/test-scheduled-emails", async (req, res) => {
+  try {
+    const job = req.query.job || "all";
+    const results = [];
+
+    if (job === "reminders" || job === "all") {
+      await runStudentReminders();
+      results.push("Student fee reminders executed");
+    }
+    if (job === "unpaid" || job === "all") {
+      await runAdminUnpaidReport();
+      results.push("Admin unpaid report executed");
+    }
+    if (job === "cumulative" || job === "all") {
+      await runAdminCumulativeReport();
+      results.push("Admin cumulative report executed");
+    }
+
+    res.json({ message: "Test complete", results });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 module.exports = router;

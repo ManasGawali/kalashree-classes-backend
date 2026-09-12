@@ -46,6 +46,36 @@ app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({ message: "Something went wrong on the server" });
 });
+const { startScheduler, runStudentReminders, runAdminUnpaidReport, runAdminCumulativeReport } = require("./utils/scheduler");
+
+/* ---------- Cron Webhook (for Render free tier / external cron services) ---------- */
+// External cron services (e.g. cron-job.org) can call these to trigger jobs
+// even when Render has spun down the server. Protected by CRON_SECRET.
+app.post("/api/cron/:job", async (req, res) => {
+  const secret = req.headers["x-cron-secret"] || req.query.secret;
+  if (!process.env.CRON_SECRET || secret !== process.env.CRON_SECRET) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+
+  const { job } = req.params;
+  try {
+    if (job === "reminders") {
+      await runStudentReminders();
+    } else if (job === "unpaid-report") {
+      await runAdminUnpaidReport();
+    } else if (job === "cumulative-report") {
+      await runAdminCumulativeReport();
+    } else {
+      return res.status(400).json({ message: "Unknown job. Use: reminders, unpaid-report, or cumulative-report" });
+    }
+    res.json({ message: `Job '${job}' executed successfully` });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+  startScheduler();
+});
