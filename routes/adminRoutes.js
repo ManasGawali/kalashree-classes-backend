@@ -227,6 +227,10 @@ router.get("/fees", async (req, res) => {
       months: { $elemMatch: { month, year } },
     });
     const paidUserIds = new Set(paymentsThisMonth.map((p) => String(p.user)));
+    const userTxnMap = {};
+    paymentsThisMonth.forEach((p) => {
+      userTxnMap[String(p.user)] = p.transactionId;
+    });
 
     const rows = users.map((u) => ({
       id: u._id,
@@ -234,6 +238,7 @@ router.get("/fees", async (req, res) => {
       batch: u.batch.name,
       monthlyFee: u.batch.monthlyFee,
       paid: paidUserIds.has(String(u._id)),
+      transactionId: userTxnMap[String(u._id)] || null,
     }));
 
     const totalCollected = rows.filter((r) => r.paid).reduce((s, r) => s + r.monthlyFee, 0);
