@@ -1,201 +1,277 @@
-# Kalashree Music Classes — Fee Management System
+# Kalashree Music Classes — Backend API
 
-A full MERN (MongoDB Atlas + Express + React + Node) application for managing
-monthly student fees, built to run entirely on free tiers, split into **three deployable
-pieces**:
+REST API server for Kalashree Music Classes, handling authentication, student management, fee payments (UPI + QR), and automated email notifications.
 
-| App               | Purpose                          | Example domain            |
-|--------------------|-----------------------------------|-----------------------------|
-| `backend`          | Shared API for both frontends     | `api.xyz.com`   |
-| `frontend-public`  | Public site + student dashboard   | `www.xyz.com`   |
-| `frontend-admin`   | Admin console                     | `admin.xyz.com` |
+## Tech Stack
 
-Splitting the frontends means the admin console is a completely separate deployment —
-different domain/subdomain, its own build, and none of its code ships to student/public
-visitors.
-
-## Features
-
-- **Public site** (`frontend-public`): batch list, fees, timings, contact — general
-  resources, no login needed. Also hosts the student login + dashboard + payment flow.
-  Student accounts are created by the admin only — there is no public self-registration.
-  Students log in with their **phone number + password** (set by the admin when the
-  account is created). Email is optional and only used for sending payment receipts.
-- **Student dashboard** (mobile-first): paid-till date, next due date, month-wise UPI
-  payment (select single or multiple consecutive months), auto-calculated amount, UPI QR
-  with the amount pre-filled, transaction ID entry, instant email confirmation (if email
-  is on file).
-- **Admin console** (`frontend-admin`, separate app/domain): OTP-secured login
-  (email+password → OTP emailed → verify), overview stats, editable per-batch monthly
-  fees, batch-wise & month-wise fee collection view, student search with full payment
-  history, add-student form, password reset for any student, and ability to reject a
-  fraudulent payment (auto-recalculates that student's due date).
-- **Design**: clean, plain white background with warm brown/tan accents (inspired by tabla
-  wood & skin tones) — deliberately minimal, like a banking app, not a busy consumer site.
-  Both frontends share the same visual theme so the brand feels consistent even though
-  they're separate apps.
-
-> Note: admin login uses **email** (for the OTP), since that's the admin's own account.
-> Only **student** login uses phone number.
-
-## Tech & free-tier services used
-
-| Layer     | Tech                          | Free tier                      |
-|-----------|--------------------------------|---------------------------------|
-| Database  | MongoDB Atlas (M0 cluster)     | 512MB free forever              |
-| Backend   | Node.js + Express               | Deploy free on Render/Railway   |
-| Frontends | React + Vite (×2 separate apps) | Deploy free on Vercel/Netlify   |
-| Email     | Resend                          | 3,000 emails/month free         |
-| QR codes  | `qrcode` npm package (no API)  | Generated locally, no cost      |
+| Layer        | Technology                          |
+| ------------ | ----------------------------------- |
+| Runtime      | Node.js ≥ 18                        |
+| Framework    | Express.js 4.x                      |
+| Database     | MongoDB Atlas (Mongoose 8.x ODM)    |
+| Auth         | JWT (jsonwebtoken)                   |
+| Email        | Resend API                           |
+| QR Generator | `qrcode` (UPI deep-link QR codes)   |
+| Scheduler    | `node-cron` + external cron webhooks |
+| Passwords    | bcryptjs (salted hashing)            |
 
 ---
 
-## 1. MongoDB Atlas setup
-
-1. Create a free account at https://www.mongodb.com/cloud/atlas.
-2. Create an **M0 (free)** cluster.
-3. Under **Database Access**, create a user with a password.
-4. Under **Network Access**, allow access from `0.0.0.0/0` (or your host's IP once deployed).
-5. Copy the connection string — this goes into `MONGO_URI` in the backend `.env`.
-
-## 2. Resend (email) setup
-
-1. Sign up free at https://resend.com.
-2. Get your API key from the dashboard → goes into `RESEND_API_KEY`.
-3. For quick testing you can send from `onboarding@resend.dev` (default `EMAIL_FROM` in
-   `.env.example`). To send from your own domain, verify it in Resend first.
-
-## 3. Backend setup
+## Quick Start
 
 ```bash
-cd backend
+# 1. Install dependencies
 npm install
-cp .env.example .env
-# edit .env with your MongoDB URI, Resend key, JWT secret, admin credentials, UPI ID,
-# and CLIENT_URLS (both frontend origins, comma-separated)
 
-npm run seed     # creates the 7 batches with default fees + the first admin account
-npm run dev       # starts on http://localhost:5000
+# 2. Copy the example env and fill in your values
+cp .env.example .env
+
+# 3. Seed the database (creates admin + 7 batches)
+npm run seed
+
+# 4. Start the dev server (auto-restarts on file changes)
+npm run dev
+
+# 5. Or start for production
+npm start
 ```
 
-Default batch fees created by the seed script (all editable later from the admin console):
+The server runs on `http://localhost:5000` by default.
 
-| Batch                | Monthly Fee |
-|-----------------------|-------------|
-| Prarambhik             | Rs. 700     |
-| Praveshika Pratham     | Rs. 800     |
-| Praveshika Poorna      | Rs. 900     |
-| Madhyama Pratham       | Rs. 1000    |
-| Madhyama Poorna        | Rs. 1100    |
-| Visharad Pratham       | Rs. 1300    |
-| Visharad Poorna        | Rs. 1500    |
+---
 
-The seed script also creates one admin using `ADMIN_EMAIL` / `ADMIN_PASSWORD` from `.env`.
-**Log in once and be sure that email inbox is one you control**, since all future admin
-logins require an OTP sent to it.
+## Environment Variables
 
-## 4. Public frontend setup (student site)
+| Variable         | Description                                                        | Example                                         |
+| ---------------- | ------------------------------------------------------------------ | ----------------------------------------------- |
+| `MONGO_URI`      | MongoDB Atlas connection string                                    | `mongodb+srv://user:pass@cluster0.xxxxx.mongodb.net/kalashree` |
+| `JWT_SECRET`     | Secret key for signing JWT tokens                                  | `a-long-random-string`                          |
+| `RESEND_API_KEY`  | API key from [Resend](https://resend.com)                         | `re_xxxxxxxxxxxxxx`                             |
+| `EMAIL_FROM`     | Sender name + email for outgoing mail                              | `Kalashree Music Classes <onboarding@resend.dev>` |
+| `ADMIN_EMAIL`    | Admin's email (receives cron reports)                              | `admin@kalashreemusic.com`                      |
+| `ADMIN_PASSWORD` | Initial admin password (used by seed script only)                  | `ChangeMe@123`                                  |
+| `UPI_ID`         | UPI VPA that receives student payments                             | `kalashreemusic@okhdfcbank`                     |
+| `UPI_PAYEE_NAME` | Payee display name for UPI QR                                      | `Kalashree Music Classes`                       |
+| `PORT`           | Server port                                                        | `5000`                                          |
+| `CLIENT_URLS`    | Comma-separated allowed CORS origins                               | `https://www.kalashreemusic.com,https://admin.kalashreemusic.com` |
+| `CRON_SECRET`    | Shared secret to authenticate external cron webhook calls          | `a-random-string`                               |
+
+---
+
+## Project Structure
+
+```
+backend/
+├── server.js              # Express app entry point, CORS, routes, cron webhook
+├── config/
+│   └── db.js              # MongoDB connection
+├── middleware/
+│   └── auth.js            # JWT verification, requireUser, requireAdmin guards
+├── models/
+│   ├── Admin.js           # Admin account (email + hashed password)
+│   ├── Batch.js           # 7 fixed curriculum levels with editable fees
+│   ├── OTP.js             # Time-limited OTPs for admin login & password reset
+│   ├── Payment.js         # Fee payment records (UPI transaction ID, months covered)
+│   └── User.js            # Student accounts (phone login, batch, paidTill pointer)
+├── routes/
+│   ├── authRoutes.js      # Login (student + admin), OTP verification, password reset
+│   ├── batchRoutes.js     # List batches (public), update fee (admin)
+│   ├── userRoutes.js      # Student dashboard data
+│   ├── paymentRoutes.js   # Quote (QR generation), submit payment, payment history
+│   └── adminRoutes.js     # Dashboard stats, student CRUD, fee collection view, reports
+├── utils/
+│   ├── dateUtils.js       # Month arithmetic, payment status calculator
+│   ├── generateQR.js      # UPI QR code generator (data URL)
+│   ├── scheduler.js       # Cron job definitions (3 scheduled jobs)
+│   ├── seed.js            # Database seeder (admin account + 7 batches)
+│   ├── sendEmail.js       # All email templates (Resend API)
+│   └── testEmails.js      # Manual email testing script
+├── .env.example
+├── package.json
+└── .gitignore
+```
+
+---
+
+## Database Models
+
+### User (Student)
+| Field           | Type       | Notes                                      |
+| --------------- | ---------- | ------------------------------------------ |
+| `name`          | String     | Required                                   |
+| `phone`         | String     | Required, unique — **login identifier**    |
+| `email`         | String     | Optional, unique, sparse — for receipts    |
+| `password`      | String     | Hashed with bcrypt                         |
+| `batch`         | ObjectId   | References `Batch`                         |
+| `joinMonth`     | Number     | 1–12, first month fees are due             |
+| `joinYear`      | Number     | Year of joining                            |
+| `paidTillMonth` | Number     | Last fully paid month (null = never paid)  |
+| `paidTillYear`  | Number     | Last fully paid year                       |
+| `isActive`      | Boolean    | Soft-delete flag                           |
+
+### Batch
+| Field        | Type   | Notes                                |
+| ------------ | ------ | ------------------------------------ |
+| `name`       | String | One of 7 fixed levels (enum)         |
+| `monthlyFee` | Number | Admin-editable fee amount            |
+
+**7 Curriculum Levels:** Prarambhik → Praveshika Pratham → Praveshika Poorna → Madhyama Pratham → Madhyama Poorna → Visharad Pratham → Visharad Poorna
+
+### Payment
+| Field                | Type     | Notes                                         |
+| -------------------- | -------- | --------------------------------------------- |
+| `user`               | ObjectId | References `User`                             |
+| `batch`              | ObjectId | References `Batch`                            |
+| `batchNameSnapshot`  | String   | Batch name at time of payment                 |
+| `feePerMonthSnapshot`| Number   | Fee per month at time of payment              |
+| `months`             | Array    | `[{month, year}]` — months this payment covers|
+| `amount`             | Number   | Total amount paid                             |
+| `transactionId`      | String   | UPI transaction reference ID                  |
+| `status`             | String   | `pending` / `completed` / `rejected`          |
+| `rejectionReason`    | String   | Reason if rejected by admin                   |
+| `emailSent`          | Boolean  | Whether confirmation email was sent           |
+
+### Admin
+| Field      | Type   | Notes                       |
+| ---------- | ------ | --------------------------- |
+| `email`    | String | Login identifier            |
+| `password` | String | Hashed with bcrypt          |
+| `name`     | String | Display name (default: "Admin") |
+
+### OTP
+| Field       | Type   | Notes                          |
+| ----------- | ------ | ------------------------------ |
+| `identifier`| String | Email or phone                 |
+| `otp`       | String | 6-digit code                   |
+| `expiresAt` | Date   | Auto-expires after 5 minutes   |
+
+---
+
+## API Reference
+
+### Health Check
+| Method | Endpoint         | Auth | Description       |
+| ------ | ---------------- | ---- | ----------------- |
+| GET    | `/api/health`    | —    | Server health check |
+
+### Authentication (`/api/auth`)
+| Method | Endpoint                     | Auth | Description                                |
+| ------ | ---------------------------- | ---- | ------------------------------------------ |
+| POST   | `/login`                     | —    | Student login (phone + password)           |
+| POST   | `/admin/login`               | —    | Admin login step 1 (email + password → OTP)|
+| POST   | `/admin/verify-otp`          | —    | Admin login step 2 (verify OTP → JWT)      |
+| POST   | `/forgot-password/send-otp`  | —    | Send password reset OTP to student email   |
+| POST   | `/forgot-password/verify-otp`| —    | Verify reset OTP                           |
+| POST   | `/forgot-password/reset`     | —    | Set new password with verified OTP         |
+
+### Batches (`/api/batches`)
+| Method | Endpoint     | Auth  | Description                 |
+| ------ | ------------ | ----- | --------------------------- |
+| GET    | `/`          | —     | List all batches with fees  |
+| PUT    | `/:id`       | Admin | Update a batch's monthly fee|
+
+### Student Dashboard (`/api/user`)
+| Method | Endpoint      | Auth | Description                                    |
+| ------ | ------------- | ---- | ---------------------------------------------- |
+| GET    | `/dashboard`  | User | Payment status, payable months, recent payments|
+
+### Payments (`/api/payments`)
+| Method | Endpoint  | Auth | Description                                    |
+| ------ | --------- | ---- | ---------------------------------------------- |
+| POST   | `/quote`  | User | Calculate amount + generate UPI QR for months  |
+| POST   | `/submit` | User | Submit transaction ID to record payment        |
+| GET    | `/mine`   | User | Full payment history for logged-in student     |
+
+### Admin (`/api/admin`)
+| Method | Endpoint                          | Auth  | Description                           |
+| ------ | --------------------------------- | ----- | ------------------------------------- |
+| GET    | `/stats`                          | Admin | Dashboard stats (totals, overdue)     |
+| POST   | `/students`                       | Admin | Create a new student account          |
+| GET    | `/students`                       | Admin | List/search students                  |
+| GET    | `/students/:id`                   | Admin | Student detail + payment history      |
+| PUT    | `/students/:id/reset-password`    | Admin | Reset a student's password            |
+| PUT    | `/students/:id/status`            | Admin | Activate/deactivate a student         |
+| GET    | `/fees`                           | Admin | Batch-wise fee collection by month    |
+| PUT    | `/payments/:id/reject`            | Admin | Reject a payment + recalculate dues   |
+| POST   | `/test-scheduled-emails`          | Admin | Manually trigger scheduled email jobs |
+
+### Cron Webhooks (`/api/cron`)
+| Method | Endpoint                  | Auth          | Description                  |
+| ------ | ------------------------- | ------------- | ---------------------------- |
+| POST   | `/cron/reminders`         | `CRON_SECRET` | Trigger student fee reminders|
+| POST   | `/cron/unpaid-report`     | `CRON_SECRET` | Trigger admin unpaid report  |
+| POST   | `/cron/cumulative-report` | `CRON_SECRET` | Trigger admin cumulative report |
+
+Cron webhooks require the header `x-cron-secret` or query param `?secret=` matching `CRON_SECRET`.
+
+---
+
+## Scheduled Cron Jobs
+
+Three automated email jobs run on a monthly schedule:
+
+| # | Job                       | Schedule                             | Recipient       | Description                                                       |
+| - | ------------------------- | ------------------------------------ | --------------- | ----------------------------------------------------------------- |
+| 1 | **Student Fee Reminders** | **10th of every month** at 10:00 AM IST | Each unpaid student (with email) | Sends individual fee reminder emails listing batch, amount due, and months overdue |
+| 2 | **Admin Unpaid Report**   | **20th of every month** at 10:00 AM IST | `ADMIN_EMAIL`   | Summary email listing all students who haven't paid for the current month with totals |
+| 3 | **Admin Cumulative Report** | **Last day of every month** at 6:00 PM IST | `ADMIN_EMAIL` | End-of-month summary of all outstanding dues across all students  |
+
+### September 2026 Example
+
+| Date                 | What happens                                                                 |
+| -------------------- | ---------------------------------------------------------------------------- |
+| **Sep 10, 10:00 AM** | Each student who hasn't paid September fees receives a reminder email        |
+| **Sep 20, 10:00 AM** | You (admin) receive a report listing all students who still haven't paid     |
+| **Sep 30, 6:00 PM**  | You receive a cumulative end-of-month summary of all outstanding dues        |
+
+> **Yes, on the 20th you will receive the unpaid report email** at `ADMIN_EMAIL`, listing every student who hasn't paid for September with their name, phone, batch, fee amount, and how long they've been overdue.
+
+### External Cron (for Render / free hosting)
+
+If your server sleeps on free hosting (e.g., Render), use an external cron service like [cron-job.org](https://cron-job.org) to hit the webhook endpoints:
+
+```
+POST https://your-api.onrender.com/api/cron/reminders
+POST https://your-api.onrender.com/api/cron/unpaid-report
+POST https://your-api.onrender.com/api/cron/cumulative-report
+```
+
+Include the header: `x-cron-secret: <your CRON_SECRET value>`
+
+---
+
+## Email Templates
+
+| Email                    | Trigger                          | Sent To         |
+| ------------------------ | -------------------------------- | --------------- |
+| Admin Login OTP          | Admin login attempt              | Admin email     |
+| Student Password Reset OTP| Student forgot password flow    | Student email   |
+| Welcome Email            | Admin creates new student account| Student email   |
+| Payment Confirmation     | Student submits payment          | Student email   |
+| Fee Reminder             | Cron job (10th of month)         | Unpaid students |
+| Unpaid Report            | Cron job (20th of month)         | Admin email     |
+| Cumulative Report        | Cron job (last day of month)     | Admin email     |
+
+---
+
+## Seed Script
 
 ```bash
-cd frontend-public
-npm install
-cp .env.example .env
-# set VITE_API_URL to your backend URL + /api
-
-npm run dev        # starts on http://localhost:5173
+npm run seed
 ```
 
-## 5. Admin frontend setup (separate app)
+Creates:
+- **1 Admin account** using `ADMIN_EMAIL` and `ADMIN_PASSWORD` from `.env`
+- **7 Batch records** (Prarambhik through Visharad Poorna) with default fee of ₹1500
 
-```bash
-cd frontend-admin
-npm install
-cp .env.example .env
-# set VITE_API_URL to your backend URL + /api (same backend as above)
+---
 
-npm run dev        # starts on http://localhost:5174
-```
+## Deployment
 
-Both frontends talk to the **same backend** — they're just two separate React apps/builds
-pointed at the same API.
+The backend is designed for **Render** (Web Service):
 
-## 6. Deploying for free
-
-- **Backend** → Render.com or Railway.app free web service. Set the same environment
-  variables as your local `.env`. Set `CLIENT_URLS` to both deployed frontend URLs,
-  comma-separated (e.g. `https://www.kalashreemusic.com,https://admin.kalashreemusic.com`)
-  — this is what allows both frontends to call the API via CORS.
-- **frontend-public** → Vercel/Netlify, mapped to your main domain (`www.kalashreemusic.com`).
-  Set `VITE_API_URL` to your backend URL + `/api`.
-- **frontend-admin** → a **second, separate** Vercel/Netlify project, mapped to your admin
-  subdomain (`admin.kalashreemusic.com`). Set the same `VITE_API_URL`. Since it's a fully
-  separate deployment, you can additionally lock it down with your host's password
-  protection / IP allowlist if you want an extra layer beyond the OTP login.
-- **Database** → MongoDB Atlas M0 (already free, no change needed).
-- **Email** → Resend free tier (no change needed).
-
-## Adding students
-
-Since there's no public sign-up, log in to the admin console → **Students** → **+ Add
-Student**, and fill in name, phone number (this becomes their login ID), an initial
-password, batch, and optionally an email (for receipts). The student can then log in
-immediately on the public site's `/login` with that phone number and password. If they
-forget it, the admin can reset it from the same Students page.
-
-## How the payment flow works
-
-1. Student logs in (by phone number, on the public site) and sees their dashboard:
-   `paidTill` and `dueDate` are computed live from their `joinMonth/joinYear` and the last
-   month they successfully paid for (`backend/utils/dateUtils.js`).
-2. On the **Pay Now** page, they tap month chips (mobile-friendly) — selection is enforced
-   to start at their due month and be consecutive, so nobody can skip owed months.
-3. `POST /api/payments/quote` calculates `months × batch.monthlyFee` and generates a UPI QR
-   code (`upi://pay?...&am=<amount>`) with the amount already embedded — the student just
-   scans, and their UPI app opens with the amount pre-filled.
-4. After paying in their UPI app, the student enters the transaction ID and hits confirm.
-   `POST /api/payments/submit` records the payment, advances their `paidTillMonth/Year`, and
-   emails a confirmation via Resend (if the student has an email on file).
-5. Admin (on the separate admin console) can view any payment and, if a transaction ID
-   turns out to be invalid, reject it — the student's due date is automatically
-   recalculated from their remaining valid payments.
-
-## Project structure
-
-```
-kalashree/
-├── backend/
-│   ├── config/db.js
-│   ├── models/          (User, Batch, Payment, Admin, OTP)
-│   ├── routes/           (auth, batches, user, payments, admin)
-│   ├── middleware/auth.js
-│   ├── utils/            (email via Resend, QR generation, due-date math, seed script)
-│   └── server.js          (CORS allows both frontend origins via CLIENT_URLS)
-│
-├── frontend-public/        (deployed to www.kalashreemusic.com)
-│   └── src/
-│       ├── pages/          (Home, Login, UserDashboard, Payment)
-│       ├── components/     (Navbar, Footer, MonthSelector, StatCard, ProtectedRoute)
-│       ├── context/AuthContext.jsx   (stores token as kalashree_student_token)
-│       ├── api/axios.js
-│       └── styles/global.css
-│
-└── frontend-admin/          (deployed to admin.kalashreemusic.com)
-    └── src/
-        ├── pages/          (AdminLogin, AdminDashboard, AdminStudents, AdminFees)
-        ├── components/     (Navbar, Footer, StatCard, ProtectedRoute)
-        ├── context/AuthContext.jsx   (stores token as kalashree_admin_token)
-        ├── api/axios.js
-        └── styles/global.css        (same tabla theme + a small "Console" tag in the navbar)
-```
-
-## Notes / things to customize before going live
-
-- Change `ADMIN_PASSWORD` immediately after first login (there's no in-app admin password
-  change screen yet — you can add one, or update it directly in MongoDB Atlas).
-- Set your real `UPI_ID` and `UPI_PAYEE_NAME` in the backend `.env`.
-- Payments are auto-marked `completed` as soon as a transaction ID is entered (since this is
-  a manual UPI flow with no payment gateway on the free tier). Admin can review and **reject**
-  any payment later from the Students page if the transaction ID turns out to be invalid.
-- Because the two frontends are now fully separate apps, make sure `CLIENT_URLS` on the
-  backend is updated any time you change either frontend's deployed domain — otherwise CORS
-  will block requests from the one you didn't update.
+1. Set the **Build Command** to `npm install`
+2. Set the **Start Command** to `npm start`
+3. Add all environment variables from `.env.example`
+4. Set `CLIENT_URLS` to your deployed frontend URLs (comma-separated)
+5. Set up external cron jobs if using the free tier (server may sleep)
