@@ -89,12 +89,12 @@ router.post("/students", async (req, res) => {
       email: email ? email.toLowerCase() : undefined,
       password,
       batch: batch._id,
-      joinMonth: joinMonth || today.getMonth() + 1,
+      joinMonth: joinMonth || today.getMonth() + 2,
       joinYear: joinYear || today.getFullYear(),
     });
 
     if (user.email) {
-      sendWelcomeEmail(user, batch.name, batch.monthlyFee, password).catch(() => {});
+      sendWelcomeEmail(user, batch.name, batch.monthlyFee, password).catch(() => { });
     }
 
     res.status(201).json({
