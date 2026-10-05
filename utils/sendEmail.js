@@ -3,17 +3,40 @@ const { Resend } = require("resend");
 const resend = new Resend(process.env.RESEND_API_KEY);
 const FROM = process.env.EMAIL_FROM || "Kalashree Music Classes <onboarding@resend.dev>";
 
+/* ---------- Startup log ---------- */
+console.log("[Email] Module loaded");
+console.log("[Email] FROM address:", FROM);
+console.log("[Email] RESEND_API_KEY present:", !!process.env.RESEND_API_KEY);
+
 const MONTH_NAMES = [
   "", "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
 ];
 
 async function sendMail({ to, subject, html }) {
+  console.log("─────────────────────────────────────────");
+  console.log("[Email] Attempting to send email...");
+  console.log("[Email]   FROM :", FROM);
+  console.log("[Email]   TO   :", to);
+  console.log("[Email]   SUBJ :", subject);
   try {
-    await resend.emails.send({ from: FROM, to, subject, html });
+    const result = await resend.emails.send({ from: FROM, to, subject, html });
+    console.log("[Email] ✅ Resend API response:", JSON.stringify(result, null, 2));
+    if (result.error) {
+      console.error("[Email] ⚠️  Resend returned an error in response:", JSON.stringify(result.error, null, 2));
+      return false;
+    }
+    console.log("[Email] ✅ Email sent successfully to:", to);
     return true;
   } catch (err) {
-    console.error("Resend email error:", err.message);
+    console.error("[Email] ❌ Resend email FAILED");
+    console.error("[Email]   Error message:", err.message);
+    console.error("[Email]   Error name:", err.name);
+    console.error("[Email]   Full error:", JSON.stringify(err, Object.getOwnPropertyNames(err), 2));
+    if (err.response) {
+      console.error("[Email]   Response status:", err.response.status);
+      console.error("[Email]   Response data:", JSON.stringify(err.response.data));
+    }
     return false;
   }
 }
