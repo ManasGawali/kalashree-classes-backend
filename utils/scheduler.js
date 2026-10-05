@@ -62,12 +62,17 @@ async function collectFeeData() {
 /* Job 1: Student fee reminder — 10th of each month at 10:00 AM IST   */
 /* ------------------------------------------------------------------ */
 async function runStudentReminders() {
-  console.log("[Scheduler] Running student fee reminder job...");
+  console.log("[Scheduler] ──── Running student fee reminder job ────");
   try {
     const { unpaidList } = await collectFeeData();
+    console.log(`[Scheduler] Found ${unpaidList.length} unpaid student(s)`);
     let sent = 0;
     for (const s of unpaidList) {
-      if (!s.email) continue; // no email on file – skip
+      if (!s.email) {
+        console.log(`[Scheduler]   Skipping ${s.name} (${s.phone}) — no email on file`);
+        continue;
+      }
+      console.log(`[Scheduler]   Sending reminder to: ${s.name} <${s.email}> (${s.batch}, ${s.monthsOverdue} months overdue)`);
       const ok = await sendFeeReminderEmail(
         s.user,
         s.batch,
@@ -77,11 +82,13 @@ async function runStudentReminders() {
         s.monthsOverdue,
         s.totalDue
       );
+      console.log(`[Scheduler]   → ${ok ? "✅ Sent" : "❌ Failed"}`);
       if (ok) sent++;
     }
-    console.log(`[Scheduler] Fee reminders: ${sent}/${unpaidList.length} emails sent.`);
+    console.log(`[Scheduler] Fee reminders complete: ${sent}/${unpaidList.length} emails sent.`);
   } catch (err) {
     console.error("[Scheduler] Student reminder job error:", err.message);
+    console.error("[Scheduler] Stack:", err.stack);
   }
 }
 
@@ -89,22 +96,26 @@ async function runStudentReminders() {
 /* Job 2: Admin unpaid report — 20th of each month at 10:00 AM IST    */
 /* ------------------------------------------------------------------ */
 async function runAdminUnpaidReport() {
-  console.log("[Scheduler] Running admin unpaid report job...");
+  console.log("[Scheduler] ──── Running admin unpaid report job ────");
   try {
     const adminEmail = process.env.ADMIN_EMAIL;
+    console.log(`[Scheduler] ADMIN_EMAIL env: "${adminEmail || "(not set)"}"`);
     if (!adminEmail) {
-      console.warn("[Scheduler] ADMIN_EMAIL not set — skipping admin unpaid report.");
+      console.warn("[Scheduler] ❌ ADMIN_EMAIL not set — skipping admin unpaid report.");
       return;
     }
     const { month, year, unpaidList } = await collectFeeData();
+    console.log(`[Scheduler] Period: ${MONTH_NAMES[month]} ${year}, Unpaid students: ${unpaidList.length}`);
     if (unpaidList.length === 0) {
       console.log("[Scheduler] No unpaid students — skipping admin report email.");
       return;
     }
+    console.log(`[Scheduler] Sending unpaid report to: ${adminEmail}`);
     const ok = await sendAdminUnpaidReportEmail(adminEmail, month, year, unpaidList);
-    console.log(`[Scheduler] Admin unpaid report: ${ok ? "sent" : "failed"}`);
+    console.log(`[Scheduler] Admin unpaid report: ${ok ? "✅ sent" : "❌ failed"}`);
   } catch (err) {
     console.error("[Scheduler] Admin unpaid report error:", err.message);
+    console.error("[Scheduler] Stack:", err.stack);
   }
 }
 
@@ -112,19 +123,25 @@ async function runAdminUnpaidReport() {
 /* Job 3: Admin cumulative report — last day of month at 6:00 PM IST  */
 /* ------------------------------------------------------------------ */
 async function runAdminCumulativeReport() {
-  console.log("[Scheduler] Running admin cumulative report job...");
+  console.log("[Scheduler] ──── Running admin cumulative report job ────");
   try {
     const adminEmail = process.env.ADMIN_EMAIL;
+    console.log(`[Scheduler] ADMIN_EMAIL env: "${adminEmail || "(not set)"}"`);
     if (!adminEmail) {
-      console.warn("[Scheduler] ADMIN_EMAIL not set — skipping cumulative report.");
+      console.warn("[Scheduler] ❌ ADMIN_EMAIL not set — skipping cumulative report.");
       return;
     }
     const { month, year, allStudentRows } = await collectFeeData();
     const grandTotal = allStudentRows.reduce((s, r) => s + r.totalOutstanding, 0);
+    const withDues = allStudentRows.filter(r => r.totalOutstanding > 0).length;
+    console.log(`[Scheduler] Period: ${MONTH_NAMES[month]} ${year}`);
+    console.log(`[Scheduler] Total students: ${allStudentRows.length}, With dues: ${withDues}, Grand total: Rs. ${grandTotal}/-`);
+    console.log(`[Scheduler] Sending cumulative report to: ${adminEmail}`);
     const ok = await sendAdminCumulativeReportEmail(adminEmail, month, year, allStudentRows, grandTotal);
-    console.log(`[Scheduler] Admin cumulative report: ${ok ? "sent" : "failed"}`);
+    console.log(`[Scheduler] Admin cumulative report: ${ok ? "✅ sent" : "❌ failed"}`);
   } catch (err) {
     console.error("[Scheduler] Admin cumulative report error:", err.message);
+    console.error("[Scheduler] Stack:", err.stack);
   }
 }
 
